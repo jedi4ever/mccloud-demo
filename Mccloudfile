@@ -1,0 +1,96 @@
+
+Mccloud::Config.run do |config|
+  # All Mccloud configuration is done here. For a detailed explanation
+  # and listing of configuration options, please view the documentation
+  # online.
+
+
+  unless File.exists?("identity")
+	puts "You need to copy the identity.example to indentity"	
+	exit
+  end
+  identityfile=File.expand_path(File.join(__FILE__,'..','identity'))
+  load identityfile
+  config.mccloud.identity=$mccloud_identity
+  config.mccloud.prefix=$mccloud_prefix
+  config.mccloud.environment=$mccloud_environment
+  config.mccloud.check_keypairs=false
+  #config.mccloud.check_securitygroups=false
+  
+
+portcounter=0
+
+%w{demo1 demo2 sorry}.each do |name|
+ config.vm.define "#{name}" do |vm_config|
+   vm_config.vm.provider="AWS"
+   vm_config.vm.provider_options={ :region => "eu-west-1"}
+
+   vm_config.vm.create_options={ 
+     # ID = "ami-e59ca991" = Ubuntu 10.10 - Maverick 64-bit (Canonical/EBS) - Euwest1
+     :image_id => "ami-e59ca991" , 
+     :flavor_id => "t1.micro",
+     :groups => %w(mccloud-development-patrick),
+     :key_name => "mccloud-key-patrick",
+     :availability_zone => "eu-west-1a" 
+   }
+   vm_config.vm.user="ubuntu"
+   vm_config.vm.bootstrap="scripts/bootstrap-ubuntu-system.sh"
+   vm_config.vm.key_name="mccloud-key-patrick"
+   vm_config.vm.private_key="keys/mccloud_rsa"
+   vm_config.vm.public_key="keys/mccloud_rsa.pub"
+   vm_config.vm.forward_port("http", 8080+portcounter, 80)
+   portcounter=portcounter+1
+   
+   vm_config.vm.provision :chef_solo do |chef|
+       chef.cookbooks_path = ["chefrepo/cookbooks","chefrepo/site-cookbooks"]
+       chef.log_level = "info"
+       chef.add_recipe "apache2"
+       chef.add_recipe "onepage"
+
+       chef.json.merge!({
+       })
+   end
+end
+   
+
+  config.stack.define "webstack" do |stack_config|
+    stack_config.stack.provider="AWS"
+    stack_config.stack.provider_options={ :region => "eu-west-1"}
+
+    # Set the json file to read, can be an URL too
+    stack_config.stack.jsonfile="stacks/webstack.json"
+
+    # Parameters to pass to the cloudformation stack
+    # These will be passed on the Parameters section of the cloudformation
+    stack_config.stack.params={ "KeyName" => "mccloud-key-patrick" }
+
+    # Sets a default for EC2 machines defined in the json
+    # If you want to override individual you have to manually define the machines
+    stack_config.stack.user[:default]="ubuntu"
+    stack_config.stack.key_name[:default]="mccloud-key-patrick"
+    stack_config.stack.private_key[:default]="/Users/patrick/.ssh/mccloud_rsa"
+    stack_config.stack.public_key[:default]="/Users/patrick/.ssh/mccloud_rsa.pub"
+
+    # This sets the bootstrap script only for the demo3 instance
+    stack_config.stack.userdata_file["demo3"]="scripts/bootstrap-ubuntu-system.sh"
+
+  end
+
+
+  config.ip.define "ip-demo1" do |config|
+    config.ip.provider="AWS"
+    config.ip.address="46.137.72.170"
+    config.ip.provider_options={ :region => "eu-west-1"}
+    config.ip.vmname = "demo1"
+  end
+
+  config.lb.define "lb" do |lb_config|
+    lb_config.lb.provider="AWS"
+    lb_config.lb.provider_options={ :region => "eu-west-1"}
+    lb_config.lb.members = [ "demo1", "demo2"]
+    lb_config.lb.sorry_members = [ "sorry"]
+  end
+
+
+ end
+end

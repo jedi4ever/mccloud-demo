@@ -1,0 +1,5 @@
+# These are the settings for the filter
+
+$mccloud_prefix="mccloud"
+$mccloud_environment="development"
+$mccloud_identity="patrick"
